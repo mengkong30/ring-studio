@@ -1,0 +1,10 @@
+import type { Project } from './model';
+function db(): Promise<IDBDatabase> { return new Promise((resolve,reject)=>{const req=indexedDB.open('ring-studio',1);req.onupgradeneeded=()=>req.result.createObjectStore('projects');req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);}); }
+export async function loadProject(): Promise<unknown> {const d=await db();return new Promise((resolve,reject)=>{const tx=d.transaction('projects','readonly');const r=tx.objectStore('projects').get('current');r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);tx.oncomplete=()=>d.close();});}
+export async function saveProject(p: Project) {const d=await db();return new Promise<void>((resolve,reject)=>{const tx=d.transaction('projects','readwrite');tx.objectStore('projects').put(p,'current');tx.oncomplete=()=>{d.close();resolve();};tx.onerror=()=>{d.close();reject(tx.error);};});}
+export async function readImage(file: File): Promise<string> {
+ if(!['image/png','image/jpeg','image/webp','image/svg+xml'].includes(file.type))throw new Error('请选择 PNG、JPG、WebP 或 SVG 图片。');
+ if(file.size>10*1024*1024)throw new Error('图片需小于 10 MB。');
+ if(file.type==='image/svg+xml'){const s=await file.text();const doc=new DOMParser().parseFromString(s,'image/svg+xml');if(doc.querySelector('parsererror,script,foreignObject')||Array.from(doc.querySelectorAll('*')).some(el=>Array.from(el.attributes).some(a=>a.name.startsWith('on')||(/href$/i.test(a.name)&&!a.value.startsWith('#'))||/url\(\s*['"]?(?!#)/i.test(a.value))))throw new Error('SVG 包含外部资源或不支持的内容，请导出为纯矢量 SVG 或 PNG。');}
+ const u=URL.createObjectURL(file);try{const img=new Image();img.src=u;await img.decode();if(!img.width||!img.height)throw new Error('图片尺寸无效。');const scale=Math.min(1,1440/Math.max(img.width,img.height));const canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(img.width*scale));canvas.height=Math.max(1,Math.round(img.height*scale));canvas.getContext('2d')!.drawImage(img,0,0,canvas.width,canvas.height);return canvas.toDataURL('image/png');}catch(e){throw new Error(e instanceof Error?e.message:'图片读取失败，请换一张图片。');}finally{URL.revokeObjectURL(u);}
+}

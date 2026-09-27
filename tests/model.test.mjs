@@ -1,0 +1,11 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import ts from 'typescript';
+const source=await readFile(new URL('../src/model.ts',import.meta.url),'utf8');
+const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
+const {newProject,parseProject}=await import('data:text/javascript;base64,'+Buffer.from(code).toString('base64'));
+test('project round trip preserves settings, card content and order',()=>{const p=newProject();p.settings.pitch=35;p.settings.lightColor='#ffeedd';p.cards[0].title='我的营收';p.cards.reverse();assert.deepEqual(JSON.parse(JSON.stringify(parseProject(JSON.parse(JSON.stringify(p))))),p);});
+test('import rejects malformed files, duplicate IDs and nonfinite data',()=>{for(const mutate of [p=>{p.version=2;},p=>{p.cards[1].id=p.cards[0].id;},p=>{p.cards[0].values=[Infinity];},p=>{p.cards[0].values=[];},p=>{p.settings.zoom='big';},p=>{p.cards[0].image='https://example.com/private';}]){const p=newProject();mutate(p);assert.throws(()=>parseProject(p));}});
+test('out of range scene settings are clamped and empty project is supported',()=>{const p=newProject();p.settings.radius=999;p.cards=[];const result=parseProject(p);assert.equal(result.settings.radius,5);assert.equal(result.cards.length,0);});
+test('cannot import more than 16 cards or invalid colors',()=>{const p=newProject();p.cards.push(...newProject().cards,...newProject().cards);assert.throws(()=>parseProject(p));const q=newProject();q.cards[0].color='url(evil)';assert.throws(()=>parseProject(q));});
